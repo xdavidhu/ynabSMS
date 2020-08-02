@@ -41,16 +41,19 @@ public class SMSReciever extends BroadcastReceiver {
         Pattern uc_balance_pattern = Pattern.compile("(?<=\\+).*(?= HUF)");
         Pattern aa_pattern = Pattern.compile("\\.\\.\\.$");
         Pattern aa_balance_pattern = Pattern.compile("(?<=Egy:\\+).*(?=,)");
-        Pattern aa_msgfee_pattern = Pattern.compile("(?<=ÜZENETDIJ:\\-).*(?=,-HUF; E)");
-        Pattern aa_atmfee_pattern = Pattern.compile("(?<=KP.FELVÉT\\/-BEFIZ\\. DIJA:\\-).*(?=,-HUF; E)");
 
 
         // Usual Card Transaction
+        // Starts like this:
+        // "200801 17:46"
+
         if (uc_pattern.matcher(body.substring(0, 3)).matches()) {
 
             String[] body_list = body.split("; ");
 
             if (body_list.length != 3) {
+
+                // Parse balance
 
                 Matcher matcher = uc_balance_pattern.matcher(body_list[3]);
                 if (matcher.find()) {
@@ -60,7 +63,11 @@ public class SMSReciever extends BroadcastReceiver {
                     success = false;
                 }
 
+                // Parse description
+
                 description = body_list[1];
+
+                // Parse date
 
                 String date_number = body.substring(0, 6);
                 DateFormat df_in = new SimpleDateFormat("yyMMdd");
@@ -73,6 +80,14 @@ public class SMSReciever extends BroadcastReceiver {
                     sendFailNotification(context,"Transaction date is invalid.");
                     success = false;
                 }
+
+                // Ignore if it is a finalization message. (Happens after "Zàrolàs", we are uploading that)
+
+                if (body_list[0].contains("Kàrtyàs foglalàs véglegesitése")) {
+                    sendFailNotification(context,"Transaction is a finalization message. Ignoring...");
+                    success = false;
+                }
+
             } else {
                 sendFailNotification(context,"Transaction is too short, it is probably failed.");
                 success = false;
@@ -80,10 +95,14 @@ public class SMSReciever extends BroadcastReceiver {
         }
 
         // Account Activity Transaction
+        // Starts like this:
+        // "...1234 Szàmla"
 
         else if (aa_pattern.matcher(body.substring(0, 3)).matches()) {
 
             String[] body_list = body.split("; ");
+
+            // Parse balance
 
             Matcher matcher = aa_balance_pattern.matcher(body);
             if (matcher.find()) {
@@ -94,6 +113,12 @@ public class SMSReciever extends BroadcastReceiver {
             }
 
             description = body;
+
+            // Parse date
+            // 3 different date formats are used
+            // 1: "...1234 Szàmla (200802)"
+            // 2: "...1234 Szàmla (2020-08-2)"
+            // 3: "...1234 Szàmla (2020-08-12)" - when day number is > 9
 
             String date_number;
             DateFormat df_in;
@@ -117,16 +142,6 @@ public class SMSReciever extends BroadcastReceiver {
 
             } catch (ParseException e) {
                 sendFailNotification(context,"Transaction date is invalid.");
-                success = false;
-            }
-
-            if (aa_msgfee_pattern.matcher(body).matches()) {
-                sendFailNotification(context,"Transaction is a message fee. Ignoring...");
-                success = false;
-            }
-
-            if (aa_atmfee_pattern.matcher(body).matches()) {
-                sendFailNotification(context,"Transaction is an ATM fee. Ignoring...");
                 success = false;
             }
 

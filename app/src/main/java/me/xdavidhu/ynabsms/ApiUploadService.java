@@ -53,12 +53,12 @@ public class ApiUploadService extends IntentService {
                 final int balance = intent.getIntExtra(EXTRA_BALANCE,0);
                 final String description = intent.getStringExtra(EXTRA_DESCRIPTION);
                 final String date = intent.getStringExtra(EXTRA_DATE);
-                handleActionFoo(balance, description, date);
+                uploadToApi(balance, description, date);
             }
         }
     }
 
-    private void handleActionFoo(final int balance, final String description, final String date) {
+    private void uploadToApi(final int balance, final String description, final String date) {
 
         final SharedPreferences sharedPref = getSharedPreferences("preferences", Context.MODE_PRIVATE);
 
@@ -69,38 +69,29 @@ public class ApiUploadService extends IntentService {
                 .addHeader("Authorization", "Bearer " + sharedPref.getString("apikey", ""))
                 .build();
 
-        client.newCall(request)
-                .enqueue(new Callback() {
-                    @Override
-                    public void onFailure(final Call call, IOException e) {
+        try (Response response = client.newCall(request).execute()) {
 
-                        sendFailNotification("API request to original balance endpoint failed.");
+            JSONObject apiResponse = null;
+            try {
+                apiResponse = new JSONObject(response.body().string());
+                JSONObject data = apiResponse.getJSONObject("data");
+                JSONObject budget = data.getJSONObject("budget");
+                JSONArray accounts = budget.getJSONArray("accounts");
+                JSONObject account = accounts.getJSONObject(0);
+                int originalBalance = account.getInt("balance")/1000;
+                String accountId = account.getString("id");
+                int value = (originalBalance - balance)*-1;
 
-                    }
+                uploadTransaction(accountId, value, description, date);
 
-                    @Override
-                    public void onResponse(Call call, final Response response) throws IOException {
+            } catch (JSONException e) {
+                sendFailNotification("Failed to parse API response from original balance endpoint.");
+                e.printStackTrace();
+            }
 
-                        JSONObject apiResponse = null;
-                        try {
-                            apiResponse = new JSONObject(response.body().string());
-                            JSONObject data = apiResponse.getJSONObject("data");
-                            JSONObject budget = data.getJSONObject("budget");
-                            JSONArray accounts = budget.getJSONArray("accounts");
-                            JSONObject account = accounts.getJSONObject(0);
-                            int originalBalance = account.getInt("balance")/1000;
-                            String accountId = account.getString("id");
-                            int value = (originalBalance - balance)*-1;
-
-                            uploadTransaction(accountId, value, description, date);
-
-                        } catch (JSONException e) {
-                            sendFailNotification("Failed to parse API response from original balance endpoint.");
-                            e.printStackTrace();
-                        }
-
-                    }
-                });
+        } catch (IOException e) {
+            sendFailNotification("API request to original balance endpoint failed.");
+        }
 
     }
 
@@ -132,34 +123,26 @@ public class ApiUploadService extends IntentService {
                 .post(body)
                 .build();
 
-        client.newCall(request)
-                .enqueue(new Callback() {
-                    @Override
-                    public void onFailure(final Call call, IOException e) {
+        try (Response response = client.newCall(request).execute()) {
 
-                        sendFailNotification("API request to transactions endpoint failed.");
+            if (response.code() == 201) {
+                NotificationCompat.Builder builder = new NotificationCompat.Builder(ApiUploadService.this.getApplicationContext(), MainActivity.NOTIFICATION_CHANNEL_ID)
+                        .setSmallIcon(R.drawable.notification_success_icon)
+                        .setContentTitle("Transaction uploaded!")
+                        .setContentText("New transaction successfully uploaded to YNAB.")
+                        .setPriority(NotificationCompat.PRIORITY_HIGH);
 
-                    }
+                NotificationManagerCompat notificationManager = NotificationManagerCompat.from(ApiUploadService.this.getApplicationContext());
+                notificationManager.notify(createNotificationID(), builder.build());
+            } else {
+                Log.d("ynabsms", response.body().string());
+                sendFailNotification("Status code '" + Integer.toString(response.code()) + "' received from YNAB API.");
+            }
 
-                    @Override
-                    public void onResponse(Call call, final Response response) throws IOException {
+        } catch (IOException e) {
+            sendFailNotification("API request to transactions endpoint failed.");
+        }
 
-                        if (response.code() == 200) {
-                            Log.d("ynabsms", response.body().string());
-                            NotificationCompat.Builder builder = new NotificationCompat.Builder(ApiUploadService.this.getApplicationContext(), MainActivity.NOTIFICATION_CHANNEL_ID)
-                                    .setSmallIcon(R.drawable.notification_success_icon)
-                                    .setContentTitle("Transaction uploaded!")
-                                    .setContentText("New transaction successfully uploaded to YNAB.")
-                                    .setPriority(NotificationCompat.PRIORITY_HIGH);
-
-                            NotificationManagerCompat notificationManager = NotificationManagerCompat.from(ApiUploadService.this.getApplicationContext());
-                            notificationManager.notify(createNotificationID(), builder.build());
-                        } else {
-                            Log.d("ynabsms", response.body().string());
-                            sendFailNotification("Status code '" + Integer.toString(response.code()) + "' received from YNAB API.");
-                        }
-                    }
-                });
     }
 
     public int createNotificationID(){
