@@ -1,3 +1,6 @@
+# Remove DS_Store
+.DS_Store
+
 # Built application files
 *.apk
 *.aar
@@ -14,6 +17,10 @@
 bin/
 gen/
 out/
+
+# Remove release folder
+release/
+
 #  Uncomment the following line in case you need and you don't have the release build type files in your app
 # release/
 
