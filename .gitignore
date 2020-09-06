@@ -21,6 +21,11 @@ out/
 .gradle/
 build/
 
+# Remove extra Gradle files
+gradlew
+gradlew.bat
+*.jar
+
 # Local configuration file (sdk path, etc)
 local.properties
 
