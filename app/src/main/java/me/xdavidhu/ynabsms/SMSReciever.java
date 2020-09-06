@@ -37,6 +37,9 @@ public class SMSReciever extends BroadcastReceiver {
         String date = "";
         boolean success = true;
 
+        Pattern amount_pattern = Pattern.compile("(?<!Egy:)[+-][0-9.,]*(?=(?:,-| )[A-Z]*;)");
+        Pattern currency_pattern = Pattern.compile("(?<!Egy:)[+-][0-9.,]*(?: |,-)([A-Z]*)(?=;)");
+
         Pattern uc_pattern = Pattern.compile("^\\d\\d\\d$");
         Pattern uc_balance_pattern = Pattern.compile("(?<=\\+).*(?= HUF)");
         Pattern aa_pattern = Pattern.compile("\\.\\.\\.$");
@@ -155,11 +158,45 @@ public class SMSReciever extends BroadcastReceiver {
 
         if (success) {
 
-            Log.d("ynabsms", "Balance: " + Integer.toString(balance));
-            Log.d("ynabsms", "Description: " + description);
-            Log.d("ynabsms", "Date: " + date);
-            ApiUploadService.startActionUpload(context, balance, description, date);
+            String rawAmount = "";
+            double amount = 0.0;
+            boolean isIncome = false;
+            Matcher amount_matcher = amount_pattern.matcher(body);
+            if (amount_matcher.find()) {
+                rawAmount = amount_matcher.group();
+                if (rawAmount.startsWith("+")) {
+                    isIncome = true;
+                } else if (rawAmount.startsWith(("-"))) {
+                    isIncome = false;
+                } else {
+                    sendFailNotification(context,"Can't determine transaction direction.");
+                    success = false;
+                }
+                amount = Double.parseDouble(rawAmount.substring(1).replace(".", "").replace(",", "."));
+            } else {
+                sendFailNotification(context,"Amount not found in transaction.");
+                success = false;
+            }
 
+            String currency = "";
+            Matcher currency_matcher = currency_pattern.matcher(body);
+            if (currency_matcher.find()) {
+                currency = currency_matcher.group(1);
+            } else {
+                sendFailNotification(context,"Currency not found in transaction.");
+                success = false;
+            }
+
+            if (success) {
+                Log.d("ynabsms", "Amount: " + Double.toString(amount));
+                Log.d("ynabsms", "isIncome: " + Boolean.toString(isIncome));
+                Log.d("ynabsms", "Currency: " + currency);
+
+                Log.d("ynabsms", "Balance: " + Integer.toString(balance));
+                Log.d("ynabsms", "Description: " + description);
+                Log.d("ynabsms", "Date: " + date);
+                ApiUploadService.startActionUpload(context, amount, isIncome, currency, balance, description, date);
+            }
         }
 
     }
@@ -200,6 +237,7 @@ public class SMSReciever extends BroadcastReceiver {
 
                 for (Map.Entry<String, String> message : messages.entrySet()) {
 
+                    // Pattern to match phone number of OTP SMS service
                     Pattern sender_pattern = Pattern.compile("^\\+36\\d\\d9400700$");
                     if (sender_pattern.matcher(message.getKey()).matches()) {
                         parseSMS(context, message.getValue());
