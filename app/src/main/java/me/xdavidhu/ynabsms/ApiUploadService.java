@@ -88,7 +88,7 @@ public class ApiUploadService extends IntentService {
         } else {
             OkHttpClient client = new OkHttpClient();
             Request request = new Request.Builder()
-                    .url("https://api.exchangeratesapi.io/latest?base=" + currency.toUpperCase())
+                    .url("https://api.exchangerate.host/latest?base=" + currency.toUpperCase())
                     .build();
 
             try (Response response = client.newCall(request).execute()) {
